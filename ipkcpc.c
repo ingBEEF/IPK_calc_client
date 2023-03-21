@@ -10,6 +10,10 @@
 #include <unistd.h>
 
 #define BUFSIZE 512
+#define OPCODE_INDEX 0
+#define BAF_DATA_OFSET_Q 2
+#define BAF_DATA_OFSET_R 3
+#define RESPONSE_DATA_LEN buf[2]
 
 int client_socket;
 
@@ -24,6 +28,8 @@ void udp_mess (struct sockaddr_in server_address) {
     char buf[BUFSIZE];
     int bytestx, bytesrx;
     socklen_t serverlen;
+    int opc;
+    int stat;
     /* Vytvoreni soketu */ 
 	if ((client_socket = socket(AF_INET, SOCK_DGRAM, 0)) <= 0)
 	{
@@ -33,32 +39,50 @@ void udp_mess (struct sockaddr_in server_address) {
     while (1){
         /* nacteni zpravy od uzivatele */
         bzero(buf, BUFSIZE);
-        printf("Please enter msg: ");
-        fgets(buf + 2, BUFSIZE - 2, stdin);
-        if (strcmp((buf), EOF))
-        buf[0] = 0x00;
-        buf[1] = strlen(buf + 2);
+        if (!fgets(buf + BAF_DATA_OFSET_Q, BUFSIZE - BAF_DATA_OFSET_Q, stdin))
+            break;
+        //if (strcmp((buf), EOF)){}
+        buf[OPCODE_INDEX] = 0x00;
+        buf[1] = strlen(buf + BAF_DATA_OFSET_Q);
 
         /* odeslani zpravy na server */
         serverlen = sizeof(server_address);
-        bytestx = sendto(client_socket, buf, strlen(buf + 2) + 2, 0, (struct sockaddr *) &server_address, serverlen);
+        bytestx = sendto(client_socket, buf, strlen(buf + BAF_DATA_OFSET_Q) + BAF_DATA_OFSET_Q, 0, (struct sockaddr *) &server_address, serverlen);
         if (bytestx < 0) 
         perror("ERROR: sendto");
         
         /* prijeti odpovedi a jeji vypsani */
         bytesrx = recvfrom(client_socket, buf, BUFSIZE, 0, (struct sockaddr *) &server_address, &serverlen);
-        if (bytesrx < 0) 
-        perror("ERROR: recvfrom");
-        buf[5] = 0;
-        printf("Echo from server: %s", buf+3);
+        if (bytesrx < 0) {
+            perror("ERROR: recvfrom");
+        }
+        buf[RESPONSE_DATA_LEN + BAF_DATA_OFSET_R] = 0;
+        opc = (int)buf[OPCODE_INDEX];
+        if (opc != 1){
+            fprintf(stderr, "Response error\n");
+            return;
+        }
+        stat = (int)buf[1];
+        if (stat == 1){
+            printf("ERR:%s\n", (buf + BAF_DATA_OFSET_R));
+        }
+        else if (stat == 0){
+            printf("OK:%s\n", (buf+3));
+        }
     }
-    return 0;
 }
 
 void tcp_mess (struct sockaddr_in server_address) {
     char buf[BUFSIZE];
     int bytestx, bytesrx;
+    int closed = 0;
     socklen_t serverlen;
+    if (connect(client_socket, (const struct sockaddr *) &server_address, sizeof(server_address)) != 0)
+        {
+            perror("ERROR: connect");
+            exit(EXIT_FAILURE);        
+        }
+    
     while (1) {
             /* Vytvoreni soketu */
         if ((client_socket = socket(AF_INET, SOCK_STREAM, 0)) <= 0)
@@ -70,34 +94,42 @@ void tcp_mess (struct sockaddr_in server_address) {
         /* nacteni zpravy od uzivatele */
         bzero(buf, BUFSIZE);
         printf("Please enter msg: ");
-        fgets(buf, BUFSIZE, stdin);
+        if (fgets(buf, BUFSIZE, stdin) == NULL){
+            if(!closed){
+                bytestx = send(client_socket, "BYE\n", strlen("BYE\n"), 0);
+                if (bytestx < 0) 
+                    perror("ERROR in sendto");
+                bytesrx = recv(client_socket, buf, BUFSIZE, 0);
+                if (bytesrx < 0) 
+                    perror("ERROR in recvfrom");
+            }
+            return;
+        }
         
-        if (connect(client_socket, (const struct sockaddr *) &server_address, sizeof(server_address)) != 0)
-        {
-            perror("ERROR: connect");
-            exit(EXIT_FAILURE);        
+        if(strcmp(buf, "BYE\n")){
+            closed = 1;
         }
 
         /* odeslani zpravy na server */
         bytestx = send(client_socket, buf, strlen(buf), 0);
         if (bytestx < 0) 
-        perror("ERROR in sendto");
+            perror("ERROR in sendto");
         
         /* prijeti odpovedi a jeji vypsani */
         bytesrx = recv(client_socket, buf, BUFSIZE, 0);
         if (bytesrx < 0) 
-        perror("ERROR in recvfrom");
+            perror("ERROR in recvfrom");
         
         printf("Echo from server: %s", buf);
-            
-        close(client_socket);
-        return 0;
+        
+
     }
+    close(client_socket);
 }
 
 int main (int argc, const char * argv[]) {
-	int port_number, bytestx, bytesrx;
-    socklen_t serverlen;
+	int port_number;//, bytestx, bytesrx;
+    //socklen_t serverlen;
     const char *server_hostname;
     struct hostent *server;
     struct sockaddr_in server_address;

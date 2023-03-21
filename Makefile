@@ -4,11 +4,10 @@ CFLAGS = -std=c99
 all: ipkcpc.c
 	$(CC) $(CFLAGS) -o ipkcpc ipkcpc.c
 
+runudp: all
+	./ipkcpc -h localhost -p 2222 -m udp
+
+runtcp: all
+	./ipkcpc -h localhost -p 2222 -m tcp
 
 clean: rm ipkcpc
-
-run: all
-	./ipkcpc -h localhost -p 1024 -m udp <in
-
-val: all
-	valgrind -v ./ipkcpc -h localhost -p 1024 -m udp <in
